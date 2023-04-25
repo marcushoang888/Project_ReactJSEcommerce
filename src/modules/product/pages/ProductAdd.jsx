@@ -8,11 +8,17 @@ import {
   Typography,
 } from "@mui/material";
 import NumericFormatCustom from "../components/NumericFormatCustom";
-import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Loading from "../../common/components/Loading";
 import { useForm } from "react-hook-form";
 import { convertPrice } from "../helpers/price";
 import supabase from "../../../config/supabase";
+import { useState } from "react";
 import RHFSelect from "../components/RHFSelect";
 
 export default function ProductAdd() {
@@ -31,6 +37,9 @@ export default function ProductAdd() {
       brand_id: "",
     },
   });
+
+  const queryClient = useQueryClient();
+
   const [categoryQuery, brandQuery] = useQueries({
     queries: [
       {
@@ -51,23 +60,43 @@ export default function ProductAdd() {
     onSuccess: () => console.log("OK"),
   });
 
+  const uploadFileMutation = useMutation({
+    mutationFn: ({ category, file }) =>
+      supabase.storage
+        .from("ecommerce")
+        .upload(`${category}/${file.name}`, file, {
+          cacheControl: "3600",
+          upsert: false,
+        }),
+    select: (res) => {},
+  });
+
   const isLoading = [categoryQuery, brandQuery].some(
     (query) => query.isLoading
   );
 
-  function handleAddProduct(data) {
+  async function handleAddProduct(data) {
+    const categories = queryClient.getQueryData({
+      queryKey: ["categories"],
+    }).data;
+
+    const category = categories.find((c) => c.id === Number(data.category_id));
+
+    const { data: file } = await uploadFileMutation.mutateAsync({
+      category: category.name,
+      file: data.imageFile[0],
+    });
+
+    const { data: thumbnail } = supabase.storage
+      .from("ecommerce")
+      .getPublicUrl(file.path);
+
+    const { imageFile, ...product } = data;
+
     addProductMutation.mutate({
-      "title": "2",
-      "price": 34,
-      "description": "ưad",
-      "category_id": 1,
-      "brand_id": 3
-  });
-
-
-    console.log({
-      ...data,
+      ...product,
       price: convertPrice(data.price),
+      thumbnail: thumbnail.publicUrl,
     });
   }
 
@@ -139,15 +168,24 @@ export default function ProductAdd() {
             </RHFSelect>
           </Grid>
           <Grid item xs={12}>
-            <Button
-              variant="contained"
-              color="success"
-              component="label"
-              fullWidth
-            >
-              Upload Image
-              <input hidden accept="image/*" multiple type="file" name="thumbnailfil" ref={register}/>
-            </Button>
+            <Box>
+              <Button
+                variant="contained"
+                color="success"
+                component="label"
+                fullWidth
+              >
+                Upload Image
+                <input
+                  hidden
+                  accept="image/*"
+                  multiple
+                  type="file"
+                  {...register("imageFile")}
+                />
+              </Button>
+              <Typography>{watch("imageFile")?.[0]?.name}</Typography>
+            </Box>
           </Grid>
 
           <Grid item xs={12}>
@@ -160,5 +198,3 @@ export default function ProductAdd() {
     </Box>
   );
 }
-
-// title, price, thumbnail, description, category, brand
